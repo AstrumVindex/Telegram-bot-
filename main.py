@@ -41,18 +41,18 @@ async def send_users(update: Update, context: CallbackContext):
     """Send the list of tracked users to the admin."""
     user_id = update.effective_user.id
     if user_id != ADMIN_ID:
-        await update.message.reply_text("❌ You are not authorized to use this command.")
+        await update.message.reply_text("? You are not authorized to use this command.")
         return
     
     try:
         with open(USER_TRACKING_FILE, "r") as file:
             users = file.read()
         if users.strip():
-            await update.message.reply_text(f"📜 User List:\n{users}")
+            await update.message.reply_text(f"?? User List:\n{users}")
         else:
-            await update.message.reply_text("📂 No users have used the bot yet.")
+            await update.message.reply_text("?? No users have used the bot yet.")
     except FileNotFoundError:
-        await update.message.reply_text("📂 No users have used the bot yet.")
+        await update.message.reply_text("?? No users have used the bot yet.")
 
 # Async Start Command
 async def start(update: Update, context: CallbackContext):
@@ -61,64 +61,61 @@ async def start(update: Update, context: CallbackContext):
     await update.message.reply_text("👋 Hey there! Just send an Instagram post or reel link, and I'll fetch the media for you!")
 
 # Async Download Function
+async def download(update: Update, context: CallbackContext):
+    """Download Instagram media using Instaloader."""
+    track_user(update.effective_user.id)  # Track user
+    message = update.effective_message
+    instagram_url = message.text.strip()
 
-import asyncio
-import os
-from telegram import Update
-from telegram.ext import Application, CommandHandler, CallbackContext
+    # Check if URL is an Instagram post or reel
+    if not re.search(r"instagram.com/(p|reel)/", instagram_url):
+        await update.message.reply_text("?? Please send a valid Instagram post or reel URL.")
+        return
 
-# Initialize a dictionary to keep track of active downloads
-active_downloads = {}
-
-# Define the download function
-async def download_file(update: Update, context: CallbackContext):
-    chat_id = update.effective_chat.id
-    url = "your_file_url_here"  # replace with the actual file URL you want to download
-    file_name = "your_file_name_here"  # replace with the actual file name you want to save
-
-    # You can use a simple try-except block to handle errors during download
     try:
-        # Notify user about the start of the download
-        await update.message.reply_text("⏳ Download starting...")
-
-        # Here you can write code to actually download the file from the URL
-        # For example, using aiohttp or requests, but here is a mock for demonstration:
-        await asyncio.sleep(5)  # simulate download time with asyncio sleep
+        # Extract shortcode
+        shortcode_match = re.search(r"instagram.com/(p|reel)/([^/?]+)", instagram_url)
+        if not shortcode_match:
+            await update.message.reply_text("?? Invalid Instagram URL format.")
+            return
         
-        # Save the file or process it here
-        with open(file_name, 'w') as file:
-            file.write("Mock file content for your bot.")  # Replace with actual download code
+        shortcode = shortcode_match.group(2)
 
-        # Notify user that the download is complete
-        await update.message.reply_text(f"✅ Download complete! Saved as {file_name}.")
+        # Send "Fetching..." message
+        fetch_message = await update.message.reply_text("? Fetching media...")
+
+        # Fetch Instagram post details
+        post = Post.from_shortcode(L.context, shortcode)
+
+        # Delete "Fetching..." message
+        await context.bot.delete_message(chat_id=update.message.chat_id, message_id=fetch_message.message_id)
+
+        # Send the media
+        if post.is_video:
+            await update.message.reply_video(post.video_url)
+        else:
+            await update.message.reply_photo(post.url)
+
+        # Send final success message
+        await update.message.reply_text("? Download successful! Thank you for using this bot.")
 
     except Exception as e:
-        # If any error occurs, notify the user
-        await update.message.reply_text(f"❌ Download failed: {e}")
+        logger.error(f"Error fetching Instagram post: {e}")
+        await update.message.reply_text(f"? Error processing request: {e}")
 
-# Define the cancel download function
-async def cancel_download(update: Update, context: CallbackContext):
-    chat_id = update.effective_chat.id
-    
-    # If the user is in the active download list, cancel it
-    if chat_id in active_downloads:
-        active_downloads[chat_id].cancel()  # Cancel the download task
-        del active_downloads[chat_id]  # Remove from active download tracking
-        await update.message.reply_text("🚫 Download canceled.")
-    else:
-        await update.message.reply_text("❌ No active downloads to cancel.")
-
-# Main function to set up bot
+# Main Function
 def main():
-    # Initialize your bot here (replace 'your_bot_token' with your actual bot token)
-    app = Application.builder().token('8042848778:AAExr22gOgmvQ7O0nQ3qJHsUtCBfD6xOGbU').build()
+    """Starts the Telegram bot."""
+    application = Application.builder().token(TOKEN).build()
 
-    # Add handlers for /download and /cancel commands
-    app.add_handler(CommandHandler("download", download_file))
-    app.add_handler(CommandHandler("cancel", cancel_download))
+    # Add handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("send_users", send_users))  # Admin-only command
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download))
 
-    # Run the bot
-    app.run_polling()
+    # Start the bot
+    application.run_polling()
 
-if __name__ == '__main__':
+# Start the bot
+if __name__ == "__main__":
     main()
