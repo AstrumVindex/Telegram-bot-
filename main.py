@@ -112,6 +112,10 @@ from telegram.ext import CallbackContext
 
 L = instaloader.Instaloader()
 
+# Ensure the 'downloads' directory exists
+if not os.path.exists("downloads"):
+    os.makedirs("downloads")
+
 async def download(update: Update, context: CallbackContext):
     message = await update.message.reply_text("⏳ Preparing to download...")
 
