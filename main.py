@@ -1,19 +1,40 @@
 import logging
 import re
 import asyncio
+import os
+from dotenv import load_dotenv
 from instaloader import Instaloader, Post
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 
-# Logger Setup
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Load environment variables
+load_dotenv()
+
+# Get the bot token
+import os
+
+# Load bot token from Render environment variables
+TOKEN = os.getenv("BOT_TOKEN")
+
+if not TOKEN:
+    print("❌ Bot token is missing! Make sure it is set in Render.")
+    exit(1)
+
+
+# Initialize the bot application after loading the token
+app = Application.builder().token(TOKEN).build()
 
 # Initialize Instaloader
 L = Instaloader()
 
-# Telegram Bot Token (Replace with your actual token)
-TOKEN = "8042848778:AAExr22gOgmvQ7O0nQ3qJHsUtCBfD6xOGbU"
+# Logger Setup
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+logger.debug(f"Token Loaded: {TOKEN}")
+
+
+
 
 # Admin User ID (Replace with your actual Telegram numeric ID)
 ADMIN_ID = 1262827267  # Change this to your Telegram user ID
@@ -41,18 +62,18 @@ async def send_users(update: Update, context: CallbackContext):
     """Send the list of tracked users to the admin."""
     user_id = update.effective_user.id
     if user_id != ADMIN_ID:
-        await update.message.reply_text("? You are not authorized to use this command.")
+        await update.message.reply_text("🫵 You are not authorized to use this command.")
         return
     
     try:
         with open(USER_TRACKING_FILE, "r") as file:
             users = file.read()
         if users.strip():
-            await update.message.reply_text(f"?? User List:\n{users}")
+            await update.message.reply_text(f" User List:\n{users}")
         else:
-            await update.message.reply_text("?? No users have used the bot yet.")
+            await update.message.reply_text("😩 No users have used the bot yet.")
     except FileNotFoundError:
-        await update.message.reply_text("?? No users have used the bot yet.")
+        await update.message.reply_text("😩 No users have used the bot yet.")
 
 # Async Start Command
 async def start(update: Update, context: CallbackContext):
@@ -69,20 +90,20 @@ async def download(update: Update, context: CallbackContext):
 
     # Check if URL is an Instagram post or reel
     if not re.search(r"instagram.com/(p|reel)/", instagram_url):
-        await update.message.reply_text("?? Please send a valid Instagram post or reel URL.")
+        await update.message.reply_text(" Please send a valid Instagram post or reel URL.")
         return
 
     try:
         # Extract shortcode
         shortcode_match = re.search(r"instagram.com/(p|reel)/([^/?]+)", instagram_url)
         if not shortcode_match:
-            await update.message.reply_text("?? Invalid Instagram URL format.")
+            await update.message.reply_text(" Invalid Instagram URL format.")
             return
         
         shortcode = shortcode_match.group(2)
 
         # Send "Fetching..." message
-        fetch_message = await update.message.reply_text("? Fetching media...")
+        fetch_message = await update.message.reply_text("⏳ Fetching media...")
 
         # Fetch Instagram post details
         post = Post.from_shortcode(L.context, shortcode)
