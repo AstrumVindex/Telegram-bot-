@@ -6,6 +6,9 @@ from dotenv import load_dotenv
 from instaloader import Instaloader, Post
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+from aiolimiter import AsyncLimiter
+import asyncio
+
 
 # Load environment variables
 load_dotenv()
@@ -20,6 +23,7 @@ if not TOKEN:
     print("❌ Bot token is missing! Make sure it is set in Render.")
     exit(1)
 
+rate_limiter = AsyncLimiter(1, 2)  # Allows 1 message every 2 seconds
 
 # Initialize the bot application after loading the token
 app = Application.builder().token(TOKEN).build()
@@ -83,6 +87,10 @@ async def start(update: Update, context: CallbackContext):
 
 # Async Download Function
 async def download(update: Update, context: CallbackContext):
+    async with rate_limiter:
+        # Existing download code here...
+        await update.message.reply_text("Processing your request...")
+
     """Download Instagram media using Instaloader."""
     track_user(update.effective_user.id)  # Track user
     message = update.effective_message
