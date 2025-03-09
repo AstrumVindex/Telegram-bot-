@@ -127,7 +127,8 @@ async def download(update: Update, context: CallbackContext):
 # Main Function
 def main():
     """Starts the Telegram bot."""
-   # Create the bot application instance
+    
+    # Create the bot application instance
     application = Application.builder().token(TOKEN).build()
 
     # Add handlers
@@ -135,17 +136,18 @@ def main():
     application.add_handler(CommandHandler("send_users", send_users))  # Admin-only command
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download))
 
-async def error_handler(update, context):
-    """Handles unexpected errors and prevents bot crashes."""
-    logging.error(f"⚠️ Exception: {context.error}")
-    await update.message.reply_text("❌ Oops! Something went wrong. Please try again later.")
+    # Define error handler
+    async def error_handler(update, context):
+        """Handles unexpected errors and prevents bot crashes."""
+        logging.error(f"⚠️ Exception: {context.error}")
+        await update.message.reply_text("❌ Oops! Something went wrong. Please try again later.")
 
-# Add the error handler **after** defining `application`
-application.add_error_handler(error_handler)
+    # Add the error handler after defining `application`
+    application.add_error_handler(error_handler)
 
-# Start the bot
-application.run_polling()
+    # Start the bot
+    application.run_polling()
 
-# Start the bot
+# Ensure the script runs correctly
 if __name__ == "__main__":
     main()
