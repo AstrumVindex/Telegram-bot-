@@ -102,47 +102,71 @@ async def update_progress(update, context, current, total, speed):
 
 
 # Async Download Function
-async def download(update: Update, context: CallbackContext):
-    """Download Instagram media with a modern progress bar"""
-    message = await update.message.reply_text("⏳ Preparing to download...")
-    context.user_data["progress_message"] = message  # Store progress message
+import os
+import requests
+import instaloader
+import asyncio
 
+from telegram import Update
+from telegram.ext import CallbackContext
+
+L = instaloader.Instaloader()
+
+async def download(update: Update, context: CallbackContext):
+    message = await update.message.reply_text("⏳ Preparing to download...")
+
+    # Extract URL from user message
     instagram_url = update.message.text.strip()
 
-    if not re.search(r"instagram.com/(p|reel)/", instagram_url):
-        await update.message.reply_text("⚠️ Please send a valid Instagram post or reel URL.")
-        return
-
     try:
-        # Extract shortcode from URL
-        shortcode_match = re.search(r"instagram.com/(p|reel)/([^/?]+)", instagram_url)
+        # Get the post using Instaloader
+        shortcode_match = re.search(r"instagram\.com/(p|reel)/(\w+)", instagram_url)
         if not shortcode_match:
-            await update.message.reply_text("⚠️ Invalid Instagram URL format.")
+            await update.message.reply_text("⚠️ Invalid Instagram URL!")
             return
         
         shortcode = shortcode_match.group(2)
-        post = Post.from_shortcode(L.context, shortcode)
+        post = instaloader.Post.from_shortcode(L.context, shortcode)
 
-        total_size = post.filesize / (1024 * 1024)  # Convert bytes to MB
+        # Get media URL (image or video)
+        media_url = post.url  
 
-        # Start progress simulation
+        # Fetch file size
+        response = requests.head(media_url)
+        file_size = int(response.headers.get('content-length', 0))
+
+        # Set up progress tracking
+        file_name = f"downloads/{shortcode}.mp4" if post.is_video else f"downloads/{shortcode}.jpg"
         downloaded = 0
-        while downloaded < total_size:
-            speed = round((total_size / 10), 2)  # Simulated speed (10% per loop)
-            downloaded = min(downloaded + speed, total_size)
-            await update_progress(update, context, round(downloaded, 2), round(total_size, 2), speed)
-            time.sleep(1)
 
-        # Send final file
+        # Start downloading with progress bar
+        with open(file_name, "wb") as file:
+            response = requests.get(media_url, stream=True)
+            for chunk in response.iter_content(chunk_size=1024):
+                if chunk:
+                    file.write(chunk)
+                    downloaded += len(chunk)
+                    
+                    # Calculate progress
+                    progress = int((downloaded / file_size) * 100)
+                    progress_bar = "⬜️" * (10 - progress // 10) + "🟩" * (progress // 10)
+
+                    # Update Telegram message every 5%
+                    if progress % 5 == 0:
+                        await message.edit_text(
+                            f"📥 Downloading... {progress}%\n{progress_bar}\n{downloaded // 1024} KB of {file_size // 1024} KB"
+                        )
+
+        # Send media after successful download
         if post.is_video:
-            await update.message.reply_video(post.video_url)
+            await update.message.reply_video(video=open(file_name, "rb"))
         else:
-            await update.message.reply_photo(post.url)
+            await update.message.reply_photo(photo=open(file_name, "rb"))
 
-        await update.message.reply_text("✅ Download Complete!")
+        await message.delete()  # Remove progress bar when done
 
     except Exception as e:
-        await update.message.reply_text(f"❌ Error: {e}")
+        await update.message.reply_text(f"❌ Error: {str(e)}")
 
 # Main Function
 def main():
