@@ -118,7 +118,7 @@ async def download(update: Update, context: CallbackContext):
             await update.message.reply_photo(post.url)
 
         # Send final success message
-        await update.message.reply_text("? Download successful! Thank you for using this bot.")
+        await update.message.reply_text("✅ Download successful! Thank you for using this bot.")
 
     except Exception as e:
         logger.error(f"Error fetching Instagram post: {e}")
@@ -134,8 +134,15 @@ def main():
     application.add_handler(CommandHandler("send_users", send_users))  # Admin-only command
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download))
 
+import logging
+
+async def error_handler(update: Update, context: CallbackContext):
+    """Handles unexpected errors and prevents bot crashes."""
+    logging.error(f"⚠️ Exception: {context.error}")
+    await update.message.reply_text("❌ Oops! Something went wrong. Please try again later.")
+application.add_error_handler(error_handler)  # Add the error handler at the end
     # Start the bot
-    application.run_polling()
+application.run_polling()
 
 # Start the bot
 if __name__ == "__main__":
