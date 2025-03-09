@@ -81,48 +81,68 @@ async def start(update: Update, context: CallbackContext):
     track_user(update.effective_user.id)  # Track user
     await update.message.reply_text("👋 Hey there! Just send an Instagram post or reel link, and I'll fetch the media for you!")
 
+import time
+import math
+
+async def update_progress(update, context, current, total, speed):
+    """Update the progress bar message dynamically"""
+    progress = min(int((current / total) * 10), 10)  # Convert to a 10-block scale
+    bar = "🟩" * progress + "⬜" * (10 - progress)  # Create progress bar
+
+    text = f"📥 Downloading...\n{bar} {math.ceil((current / total) * 100)}%\n{current} MB of {total} MB ({speed} MB/s)"
+    
+    try:
+        await context.bot.edit_message_text(
+            chat_id=update.effective_chat.id,
+            message_id=context.user_data["progress_message"].message_id,
+            text=text
+        )
+    except Exception:
+        pass  # Ignore errors if message updates too frequently
+
+
 # Async Download Function
 async def download(update: Update, context: CallbackContext):
-    """Download Instagram media using Instaloader."""
-    track_user(update.effective_user.id)  # Track user
-    message = update.effective_message
-    instagram_url = message.text.strip()
+    """Download Instagram media with a modern progress bar"""
+    message = await update.message.reply_text("⏳ Preparing to download...")
+    context.user_data["progress_message"] = message  # Store progress message
 
-    # Check if URL is an Instagram post or reel
+    instagram_url = update.message.text.strip()
+
     if not re.search(r"instagram.com/(p|reel)/", instagram_url):
-        await update.message.reply_text(" Please send a valid Instagram post or reel URL.")
+        await update.message.reply_text("⚠️ Please send a valid Instagram post or reel URL.")
         return
 
     try:
-        # Extract shortcode
+        # Extract shortcode from URL
         shortcode_match = re.search(r"instagram.com/(p|reel)/([^/?]+)", instagram_url)
         if not shortcode_match:
-            await update.message.reply_text(" Invalid Instagram URL format.")
+            await update.message.reply_text("⚠️ Invalid Instagram URL format.")
             return
         
         shortcode = shortcode_match.group(2)
-
-        # Send "Fetching..." message
-        fetch_message = await update.message.reply_text("⏳ Fetching media...")
-
-        # Fetch Instagram post details
         post = Post.from_shortcode(L.context, shortcode)
 
-        # Delete "Fetching..." message
-        await context.bot.delete_message(chat_id=update.message.chat_id, message_id=fetch_message.message_id)
+        total_size = post.filesize / (1024 * 1024)  # Convert bytes to MB
 
-        # Send the media
+        # Start progress simulation
+        downloaded = 0
+        while downloaded < total_size:
+            speed = round((total_size / 10), 2)  # Simulated speed (10% per loop)
+            downloaded = min(downloaded + speed, total_size)
+            await update_progress(update, context, round(downloaded, 2), round(total_size, 2), speed)
+            time.sleep(1)
+
+        # Send final file
         if post.is_video:
             await update.message.reply_video(post.video_url)
         else:
             await update.message.reply_photo(post.url)
 
-        # Send final success message
-        await update.message.reply_text("? Download successful! Thank you for using this bot.")
+        await update.message.reply_text("✅ Download Complete!")
 
     except Exception as e:
-        logger.error(f"Error fetching Instagram post: {e}")
-        await update.message.reply_text(f"? Error processing request: {e}")
+        await update.message.reply_text(f"❌ Error: {e}")
 
 # Main Function
 def main():
