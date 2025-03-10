@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 L = Instaloader()
 
 # Telegram Bot Token (Replace with your actual token)
-TOKEN = "8042848778:AAH-RI04b2WEGorpbsWnQDzPIngSIMvFJxw"
+TOKEN = "8042848778:AAExr22gOgmvQ7O0nQ3qJHsUtCBfD6xOGbU"
 
 # Admin User ID (Replace with your actual Telegram numeric ID)
 ADMIN_ID = 1262827267  # Change this to your Telegram user ID
