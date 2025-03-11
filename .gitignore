@@ -20,3 +20,5 @@ logs/
 
 # Ignore downloaded media (if not needed in GitHub)
 downloads/
+
+# Ignore Config file because it contains API

@@ -4,6 +4,10 @@ import asyncio
 from instaloader import Instaloader, Post
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+from handlers.config import BOT_TOKEN # ✅ Secure Import
+from handlers.start import start
+from handlers.messages import process_message
+from handlers.errors import error_handler
 
 # Logger Setup
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -12,8 +16,8 @@ logger = logging.getLogger(__name__)
 # Initialize Instaloader
 L = Instaloader()
 
-# Telegram Bot Token (Replace with your actual token)
-TOKEN = "8042848778:AAH-RI04b2WEGorpbsWnQDzPIngSIMvFJxw"
+TOKEN = BOT_TOKEN  # Use the secure token
+
 
 # Admin User ID (Replace with your actual Telegram numeric ID)
 ADMIN_ID = 1262827267  # Change this to your Telegram user ID
@@ -41,24 +45,24 @@ async def send_users(update: Update, context: CallbackContext):
     """Send the list of tracked users to the admin."""
     user_id = update.effective_user.id
     if user_id != ADMIN_ID:
-        await update.message.reply_text("? You are not authorized to use this command.")
+        await update.message.reply_text("❌ You are not authorized to use this command.")
         return
     
     try:
         with open(USER_TRACKING_FILE, "r") as file:
             users = file.read()
         if users.strip():
-            await update.message.reply_text(f"?? User List:\n{users}")
+            await update.message.reply_text(f"📜 User List:\n{users}")
         else:
-            await update.message.reply_text("?? No users have used the bot yet.")
+            await update.message.reply_text("📂 No users have used the bot yet.")
     except FileNotFoundError:
-        await update.message.reply_text("?? No users have used the bot yet.")
+        await update.message.reply_text("📂 No users have used the bot yet.")
 
 # Async Start Command
 async def start(update: Update, context: CallbackContext):
     """Handles the /start command."""
     track_user(update.effective_user.id)  # Track user
-    await update.message.reply_text("?? Hey there! Just send an Instagram post or reel link, and I'll fetch the media for you!")
+    await update.message.reply_text("👋 Hey there! Just send an Instagram post or reel link, and I'll fetch the media for you!")
 
 # Async Download Function
 async def download(update: Update, context: CallbackContext):
@@ -69,20 +73,20 @@ async def download(update: Update, context: CallbackContext):
 
     # Check if URL is an Instagram post or reel
     if not re.search(r"instagram.com/(p|reel)/", instagram_url):
-        await update.message.reply_text("?? Please send a valid Instagram post or reel URL.")
+        await update.message.reply_text("⚠️ Please send a valid Instagram post or reel URL.")
         return
 
     try:
         # Extract shortcode
         shortcode_match = re.search(r"instagram.com/(p|reel)/([^/?]+)", instagram_url)
         if not shortcode_match:
-            await update.message.reply_text("?? Invalid Instagram URL format.")
+            await update.message.reply_text("⚠️ Invalid Instagram URL format.")
             return
         
         shortcode = shortcode_match.group(2)
 
         # Send "Fetching..." message
-        fetch_message = await update.message.reply_text("? Fetching media...")
+        fetch_message = await update.message.reply_text("⏳ Fetching media...")
 
         # Fetch Instagram post details
         post = Post.from_shortcode(L.context, shortcode)
@@ -97,11 +101,11 @@ async def download(update: Update, context: CallbackContext):
             await update.message.reply_photo(post.url)
 
         # Send final success message
-        await update.message.reply_text("? Download successful! Thank you for using this bot.")
+        await update.message.reply_text("✅ Download successful! Thank you for using this bot.")
 
     except Exception as e:
         logger.error(f"Error fetching Instagram post: {e}")
-        await update.message.reply_text(f"? Error processing request: {e}")
+        await update.message.reply_text(f"❌ Error processing request: {e}")
 
 # Main Function
 def main():
