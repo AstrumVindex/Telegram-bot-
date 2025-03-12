@@ -8,6 +8,10 @@ from handlers.config import BOT_TOKEN # ✅ Secure Import
 from handlers.start import start
 from handlers.messages import process_message
 from handlers.errors import error_handler
+import sys
+sys.path.append("handlers")
+from handlers.rate_limiter import enforce_rate_limit
+
 
 # Logger Setup
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -109,16 +113,17 @@ async def download(update: Update, context: CallbackContext):
 
 # Main Function
 def main():
+
     """Starts the Telegram bot."""
     application = Application.builder().token(TOKEN).build()
 
     # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("send_users", send_users))  # Admin-only command
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,process_message))
 
     # Start the bot
-    application.run_polling()
+    application.run_polling(drop_pending_updates=True)
 
 # Start the bot
 if __name__ == "__main__":
