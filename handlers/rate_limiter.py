@@ -6,7 +6,7 @@ from telegram.ext import CallbackContext
 
 # Rate limit settings
 MAX_REQUESTS = 5  # Max messages allowed per user
-TIME_WINDOW = 60  # Time window in seconds (1 minute)
+TIME_WINDOW = 30  # Time window in seconds (0.5 minute)
 
 # Dictionary to track user requests
 user_requests = defaultdict(list)
