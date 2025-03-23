@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # ✅ Initialize the Bot
 load_dotenv()
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TOKEN = os.getenv("BOT_TOKEN")
 
 # ✅ Admin User ID (Replace with your actual Telegram ID)
 ADMIN_ID = 1262827267  
