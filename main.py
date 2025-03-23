@@ -3,9 +3,9 @@ import logging
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, CallbackContext,
-    CallbackQueryHandler, filters
+    Application, CommandHandler, MessageHandler, CallbackContext, filters
 )
+from telegram.ext import CallbackQueryHandler
 from handlers.config import BOT_TOKEN  # Secure Import
 from handlers.start import start
 from handlers.messages import process_message
@@ -65,21 +65,20 @@ async def handle_button_click(update: Update, context: CallbackContext):
     await query.answer()  # Acknowledge button click
 
     if query.data.startswith("convert_mp3:"):
-        shortcode = query.data.split(":", 1)[1]  # Extract post shortcode
-        media_path = f"downloads/{shortcode}.mp4"  # Correct path
+        instagram_url = query.data.split(":", 1)[1]  # Extract Instagram URL
 
-        # ✅ Check if the video file exists
-        if not os.path.exists(media_path):
-            await query.message.reply_text("❌ Error: Video file not found!")
-            return
+        # ✅ Instead of editing, send a new message to prevent "no text to edit" error
+        status_message = await query.message.reply_text("🎵 Converting video to MP3... Please wait... ⏳")
 
-        await query.edit_message_text("🎵 Converting video to MP3... Please wait... ⏳")
-        mp3_link = await convert_instagram_to_mp3(media_path)  # Call Zamzar API
+        # ✅ Call the Zamzar MP3 conversion function
+        mp3_link = await convert_instagram_to_mp3(instagram_url)
 
+        # ✅ Send the MP3 file or error message
         if mp3_link.startswith("http"):
+            await status_message.delete()  # ✅ Delete status message if conversion is successful
             await query.message.reply_audio(audio=mp3_link, caption="🎶 Here is your MP3 file!")
         else:
-            await query.message.reply_text(mp3_link)  # Show error message
+            await status_message.edit_text(mp3_link)  # ✅ Update message with error info
 
 # ✅ Main Bot Function
 def main():
