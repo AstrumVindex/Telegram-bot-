@@ -8,7 +8,6 @@ from instaloader import Instaloader, Post
 from telegram import Update, Message, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import CallbackContext
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 # ✅ Define Instaloader globally for Instagram
 L = Instaloader()
@@ -31,7 +30,7 @@ async def download_youtube(video_url):
     video_id = match.group(1)
     url = "https://youtube-media-downloader.p.rapidapi.com/v2/misc/list-items"
     headers = {
-        "x-rapidapi-key": "113933c73bmsh977c887d57b56fbp16fbd2jsn35cdb30a5d54",
+        "x-rapidapi-key": "API-KEY",
         "x-rapidapi-host": "youtube-media-downloader.p.rapidapi.com"
     }
     params = {"videoId": video_id}
@@ -60,7 +59,7 @@ async def download_instagram(update: Update, context: CallbackContext):
     shortcode = match.group(1).split('/')[-1]
 
     try:
-        progress_message = await message.reply_text("📥 Downloading Instagram media... Please wait... ⏳")
+        progress_message = await message.reply_text("🎦 Fetching Media...")
 
         MAX_RETRIES = 3
         for attempt in range(MAX_RETRIES):
@@ -96,18 +95,22 @@ async def download_instagram(update: Update, context: CallbackContext):
             "_Enjoy your media! Powered by [@{bot_username}](https://t.me/{bot_username})_"
         ).format(
             time=post.date_utc.strftime('%Y-%m-%d %H:%M:%S UTC'),
-            author=post.profile,
+            author=post.owner_username,
             post_url=instagram_url,
             bot_username=context.bot.username
         )
 
+        # ✅ Generate Buttons Dynamically
         keyboard = [
-           [InlineKeyboardButton("🎵 Convert to MP3", callback_data=f"convert_mp3:{shortcode}")],
-           [InlineKeyboardButton("➕ Add to Group", url=f"https://t.me/{context.bot.username}?startgroup=true")],
-           [InlineKeyboardButton("🤖 Invite Bot", url=f"https://t.me/share/url?url=https://t.me/{context.bot.username}&text=Join%20this%20awesome%20bot!")]
-]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+            [InlineKeyboardButton("➕ Add to Group", url=f"https://t.me/{context.bot.username}?startgroup=true")],
+            [InlineKeyboardButton("🤖 Invite Bot", url=f"https://t.me/share/url?url=https://t.me/{context.bot.username}&text=Join%20this%20awesome%20bot!")]
+        ]
 
+        # Add "Convert to MP3" button only for reels (videos)
+        if "reel" in instagram_url and post.is_video:
+            keyboard.insert(0, [InlineKeyboardButton("🎵 Convert to MP3", callback_data=f"convert_mp3:{shortcode}")])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
         # ✅ Check if media exists and send it
         if post.is_video:
@@ -115,6 +118,9 @@ async def download_instagram(update: Update, context: CallbackContext):
             if os.path.exists(video_file):
                 with open(video_file, "rb") as file:
                     await message.reply_video(video=file, caption=caption, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+                # Delete the video file after sending
+                os.remove(video_file)
+                print(f"✅ Deleted video file: {video_file}")
             else:
                 await message.reply_text("❌ Video file not found!")
         else:
@@ -122,6 +128,9 @@ async def download_instagram(update: Update, context: CallbackContext):
             if os.path.exists(photo_file):
                 with open(photo_file, "rb") as file:
                     await message.reply_photo(photo=file, caption=caption, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+                # Delete the photo file after sending
+                os.remove(photo_file)
+                print(f"✅ Deleted photo file: {photo_file}")
             else:
                 await message.reply_text("❌ Photo file not found!")
 

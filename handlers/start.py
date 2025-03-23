@@ -5,7 +5,7 @@ from handlers.rate_limiter import enforce_rate_limit  # ✅ Ensure Correct Impor
 async def start(update: Update, context: CallbackContext):
     if not await enforce_rate_limit(update, context):  # ✅ Apply Rate Limiter
         return
-    await update.message.reply_text("🎉 Welcome to the Ultimate Media   Downloader Bot! 🎈 Ready to get started?   Send me a link now! ")
+    await update.message.reply_text("🎉 Welcome, Ready to get started?  Send me a link now! ")
 
 
 

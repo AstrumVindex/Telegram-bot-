@@ -7,6 +7,10 @@ from telegram.ext import (
 )
 from telegram.ext import CallbackQueryHandler
 from handlers.config import BOT_TOKEN  # Secure Import
+from telegram import Update
+from telegram.ext import ContextTypes
+from handlers.downloads import download_instagram, download_youtube
+from handlers.rate_limiter import enforce_rate_limit  # Import rate limiter
 from handlers.start import start
 from handlers.messages import process_message
 from handlers.errors import error_handler
@@ -79,6 +83,33 @@ async def handle_button_click(update: Update, context: CallbackContext):
             await query.message.reply_audio(audio=mp3_link, caption="🎶 Here is your MP3 file!")
         else:
             await status_message.edit_text(mp3_link)  # ✅ Update message with error info
+
+#rate limiter
+
+async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles messages from users and processes Instagram & YouTube downloads."""
+    # Enforce rate limit
+    if not await enforce_rate_limit(update, context):
+        return  # Stop processing if the user is rate-limited
+
+    user_message = update.message.text.strip()
+
+    if "instagram.com" in user_message:
+        await download_instagram(update, context)  # Call Instagram download function
+
+    elif "youtube.com" in user_message or "youtu.be" in user_message:
+        video_info = await download_youtube(user_message)  # Call YouTube download function
+
+        if video_info and "download_link" in video_info:
+            video_link = video_info["download_link"]
+            await update.message.reply_text(f"✅ *Download Link:* [Click Here]({video_link})")
+        else:
+            await update.message.reply_text("❌ *Error:* Failed to fetch YouTube video.\nPlease check the link and try again.")
+
+    else:
+        await update.message.reply_text("⚠️ *Please send a valid Instagram or YouTube link.*")
+
+
 
 # ✅ Main Bot Function
 def main():
