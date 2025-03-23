@@ -1,94 +1,133 @@
-import yt_dlp
 import os
 import re
 import logging
-import pytube
+import asyncio
+import requests
+import time
 from instaloader import Instaloader, Post
-from telegram import Update
+from telegram import Update, Message, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ParseMode
 from telegram.ext import CallbackContext
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 # ✅ Define Instaloader globally for Instagram
 L = Instaloader()
+L.context.timeout = 60  # Increase timeout to 60 seconds
 os.makedirs("downloads", exist_ok=True)  # Ensure downloads folder exists
 
+# ✅ Progress Bar Handling
+async def update_progress(message: Message, progress: int):
+    """Updates the progress bar in the bot message."""
+    progress_bar = "█" * (progress // 10) + "░" * (10 - (progress // 10))
+    await message.edit_text(f"📥 Downloading media...\n[{progress_bar}] {progress}%")
 
 # ✅ YouTube Download Function
+async def download_youtube(video_url):
+    """Downloads YouTube media using an API."""
+    match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", video_url)
+    if not match:
+        return {"error": "Invalid YouTube URL. Could not extract video ID."}
 
-# Set the correct FFmpeg path
-FFMPEG_PATH = "./ffmpeg.exe"  # Update if necessary
-
-async def download_youtube(update, context):
-    message = update.effective_message
-    youtube_url = message.text.strip()
-
-    # Ensure downloads directory exists
-    os.makedirs("downloads", exist_ok=True)
-
-    # Define yt-dlp options
-    ydl_opts = {
-        'format': 'bestvideo+bestaudio/best',
-        'outtmpl': 'downloads/%(title)s.%(ext)s',
-        'merge_output_format': 'mp4',
-        'ffmpeg_location': FFMPEG_PATH,  # Ensure yt-dlp finds FFmpeg
-        'postprocessors': [{
-            'key': 'FFmpegVideoConvertor',
-            'preferedformat': 'mp4',
-        }],
-        'quiet': False
+    video_id = match.group(1)
+    url = "https://youtube-media-downloader.p.rapidapi.com/v2/misc/list-items"
+    headers = {
+        "x-rapidapi-key": "113933c73bmsh977c887d57b56fbp16fbd2jsn35cdb30a5d54",
+        "x-rapidapi-host": "youtube-media-downloader.p.rapidapi.com"
     }
+    params = {"videoId": video_id}
 
-    try:
-        await update.message.reply_text("⏳ Downloading your video...")
+    response = requests.get(url, headers=headers, params=params)
+    data = response.json()
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(youtube_url, download=True)
-            file_name = ydl.prepare_filename(info_dict)
+    if data.get("status") and "download_link" in data:
+        return {"download_link": data["download_link"]}
+    else:
+        return {"error": "Failed to fetch video. Check API response."}
 
-        # Send the downloaded video
-        await update.message.reply_video(video=open(file_name, "rb"), caption="✅ Download complete!")
-    
-    except Exception as e:
-        await update.message.reply_text(f"❌ Failed to download video: {str(e)}")
-
-
-# ✅ Instagram Download Function
+# ✅ Instagram Download Function with Progress Bar
 async def download_instagram(update: Update, context: CallbackContext):
+    """Downloads Instagram media with real-time progress updates."""
     message = update.effective_message
     instagram_url = message.text.strip()
 
     INSTAGRAM_REGEX = r"(https?://(?:www\.)?instagram\.com/(?:p|reel|tv)/[a-zA-Z0-9_-]+)"
-    match = re.search(r"/(p|reel|tv)/([A-Za-z0-9_-]+)", instagram_url)
+    match = re.search(INSTAGRAM_REGEX, instagram_url)
 
-    if match:
-        shortcode = match.group(2)
-    else:
-        await update.message.reply_text("⚠️ Failed to extract shortcode.")
+    if not match:
+        await message.reply_text("⚠️ Invalid Instagram URL.")
         return
 
+    shortcode = match.group(1).split('/')[-1]
+
     try:
-        fetch_message = await update.message.reply_text("⏳ Fetching Instagram media...")
+        progress_message = await message.reply_text("📥 Downloading Instagram media... Please wait... ⏳")
 
-        # ✅ Fetch Instagram post using Instaloader
-        post = Post.from_shortcode(L.context, shortcode)
-        L.download_post(post, target="downloads")
+        MAX_RETRIES = 3
+        for attempt in range(MAX_RETRIES):
+            try:
+                post = Post.from_shortcode(L.context, shortcode)
+                break  # Exit loop if successful
+            except Exception as e:
+                if attempt == MAX_RETRIES - 1:
+                    await message.reply_text(f"❌ Instagram error: {str(e)}")
+                    return
+                await message.reply_text("⚠️ Retrying... Please wait...")
+                time.sleep(3)  # Wait before retrying
 
-        # ✅ Delete "Fetching..." message
-        await context.bot.delete_message(chat_id=update.message.chat_id, message_id=fetch_message.message_id)
+        # ✅ Set Progress Bar (0% Start)
+        await update_progress(progress_message, 0)
 
-        # ✅ Send media
-        media_path = f"downloads/{shortcode}/{post.date_utc.strftime('%Y%m%d_%H%M%S')}"
+        # ✅ Download Media
+        await asyncio.to_thread(L.download_post, post, target="downloads")
+
+        # ✅ Set Progress Bar (50% Done)
+        await update_progress(progress_message, 50)
+
+        # ✅ Ensure correct media path
+        media_path = f"downloads/{post.date_utc.strftime('%Y-%m-%d_%H-%M-%S_UTC')}"
+        print(f"Checking in: {os.path.abspath(media_path)}")
+        
+        # ✅ Generate Message with Buttons
+        caption = (
+            "🎬 *Instagram Media Downloaded!*\n\n"
+            "📅 *Posted:* `{time}`\n"
+            "👤 *Author:* [{author}](https://www.instagram.com/{author})\n"
+            "🔗 *Original Post:* [Click Here]({post_url})\n\n"
+            "_Enjoy your media! Powered by [@{bot_username}](https://t.me/{bot_username})_"
+        ).format(
+            time=post.date_utc.strftime('%Y-%m-%d %H:%M:%S UTC'),
+            author=post.profile,
+            post_url=instagram_url,
+            bot_username=context.bot.username
+        )
+
+        keyboard = [
+           [InlineKeyboardButton("🎵 Convert to MP3", callback_data=f"convert_mp3:{shortcode}")],
+           [InlineKeyboardButton("➕ Add to Group", url=f"https://t.me/{context.bot.username}?startgroup=true")],
+           [InlineKeyboardButton("🤖 Invite Bot", url=f"https://t.me/share/url?url=https://t.me/{context.bot.username}&text=Join%20this%20awesome%20bot!")]
+]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+
+        # ✅ Check if media exists and send it
         if post.is_video:
             video_file = f"{media_path}.mp4"
             if os.path.exists(video_file):
-                await update.message.reply_video(video=open(video_file, "rb"))
+                with open(video_file, "rb") as file:
+                    await message.reply_video(video=file, caption=caption, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
             else:
-                await update.message.reply_text("❌ Video file not found!")
+                await message.reply_text("❌ Video file not found!")
         else:
             photo_file = f"{media_path}.jpg"
             if os.path.exists(photo_file):
-                await update.message.reply_photo(photo=open(photo_file, "rb"))
+                with open(photo_file, "rb") as file:
+                    await message.reply_photo(photo=file, caption=caption, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
             else:
-                await update.message.reply_text("❌ Photo file not found!")
+                await message.reply_text("❌ Photo file not found!")
+
+        # ✅ Set Progress Bar to 100% & Show Completion Message
+        await update_progress(progress_message, 100)
+        await progress_message.edit_text("✅ Here is your media 👇")
 
     except Exception as e:
-        await update.message.reply_text(f"❌ Instagram error: {str(e)}")
+        await message.reply_text(f"❌ Instagram error: {str(e)}")

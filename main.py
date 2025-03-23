@@ -1,52 +1,50 @@
+import os
 import logging
-import re
 import asyncio
-from instaloader import Instaloader, Post
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
-from handlers.config import BOT_TOKEN # ✅ Secure Import
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler, CallbackContext,
+    CallbackQueryHandler, filters
+)
+from handlers.config import BOT_TOKEN  # Secure Import
 from handlers.start import start
 from handlers.messages import process_message
 from handlers.errors import error_handler
-from handlers.downloads import download_youtube
 from handlers.downloads import download_youtube, download_instagram, L
- # Import Instaloader instance
-import sys
-sys.path.append("handlers")
-from handlers.rate_limiter import enforce_rate_limit
+from handlers.mp3button import convert_instagram_to_mp3  # MP3 Conversion
 
-# Logger Setup
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+# ✅ Logger Setup
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
-# Initialize Instaloader
+# ✅ Initialize the Bot
+TOKEN = BOT_TOKEN
 
-TOKEN = BOT_TOKEN  # Use the secure token
+# ✅ Admin User ID (Replace with your actual Telegram ID)
+ADMIN_ID = 1262827267  
 
-# Admin User ID (Replace with your actual Telegram numeric ID)
-ADMIN_ID = 1262827267  # Change this to your Telegram user ID
-
-# File to store user IDs
+# ✅ File to Track Users
 USER_TRACKING_FILE = "users.txt"
 
-# Function to track users
+# ✅ Function to Track Users
 def track_user(user_id: int):
-    """Track users who use the bot."""
+    """Tracks users who interact with the bot."""
     try:
-        # Load existing users
         with open(USER_TRACKING_FILE, "r") as file:
             users = file.read().splitlines()
     except FileNotFoundError:
         users = []
 
-    # Add user if not already tracked
     if str(user_id) not in users:
         with open(USER_TRACKING_FILE, "a") as file:
             file.write(str(user_id) + "\n")
 
-# Function to send user list (Admin only)
+# ✅ Admin Command to Send User List
 async def send_users(update: Update, context: CallbackContext):
-    """Send the list of tracked users to the admin."""
+    """Sends the list of tracked users to the admin."""
     user_id = update.effective_user.id
     if user_id != ADMIN_ID:
         await update.message.reply_text("❌ You are not authorized to use this command.")
@@ -55,33 +53,51 @@ async def send_users(update: Update, context: CallbackContext):
     try:
         with open(USER_TRACKING_FILE, "r") as file:
             users = file.read()
-        if users.strip():
-            await update.message.reply_text(f"📜 User List:\n{users}")
-        else:
-            await update.message.reply_text("📂 No users have used the bot yet.")
+        message = f"📜 User List:\n{users}" if users.strip() else "📂 No users have used the bot yet."
+        await update.message.reply_text(message)
     except FileNotFoundError:
         await update.message.reply_text("📂 No users have used the bot yet.")
 
-# Async Start Command
+# ✅ MP3 Conversion Button Handler
+async def handle_button_click(update: Update, context: CallbackContext):
+    """Handles button clicks for MP3 conversion."""
+    query = update.callback_query
+    await query.answer()  # Acknowledge button click
 
-# Main Function
+    if query.data.startswith("convert_mp3:"):
+        shortcode = query.data.split(":", 1)[1]  # Extract post shortcode
+        media_path = f"downloads/{shortcode}.mp4"  # Correct path
+
+        # ✅ Check if the video file exists
+        if not os.path.exists(media_path):
+            await query.message.reply_text("❌ Error: Video file not found!")
+            return
+
+        await query.edit_message_text("🎵 Converting video to MP3... Please wait... ⏳")
+        mp3_link = await convert_instagram_to_mp3(media_path)  # Call Zamzar API
+
+        if mp3_link.startswith("http"):
+            await query.message.reply_audio(audio=mp3_link, caption="🎶 Here is your MP3 file!")
+        else:
+            await query.message.reply_text(mp3_link)  # Show error message
+
+# ✅ Main Bot Function
 def main():
-
     """Starts the Telegram bot."""
     application = Application.builder().token(TOKEN).build()
 
-    # Add handlers
+    # ✅ Register Handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("send_users", send_users))  # Admin-only command
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_message))
     application.add_handler(CommandHandler("download_youtube", download_youtube))
     application.add_handler(CommandHandler("youtube", lambda u, c: download_youtube(u, c, L)))
     application.add_handler(CommandHandler("instagram", lambda u, c: download_instagram(u, c, L)))
+    application.add_handler(CallbackQueryHandler(handle_button_click))  # MP3 Button Handler
 
-
-    # Start the bot
+    # ✅ Start the bot
     application.run_polling(drop_pending_updates=True)
 
-# Start the bot
+# ✅ Start the bot
 if __name__ == "__main__":
     main()
