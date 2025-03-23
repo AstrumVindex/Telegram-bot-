@@ -1,0 +1,6 @@
+services:
+  - name: telegram-bot
+    type: web
+    runtime: python
+    buildCommand: ./build.sh  # Runs FFmpeg install before deployment
+    startCommand: python main.py

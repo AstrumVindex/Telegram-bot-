@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackContext, filters
@@ -21,7 +22,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ✅ Initialize the Bot
-TOKEN = BOT_TOKEN
+load_dotenv()
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 # ✅ Admin User ID (Replace with your actual Telegram ID)
 ADMIN_ID = 1262827267  
