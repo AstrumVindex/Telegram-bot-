@@ -103,7 +103,7 @@ async def download_instagram(update: Update, context: CallbackContext):
         # ✅ Generate Buttons Dynamically
         keyboard = [
             [InlineKeyboardButton("➕ Add to Group", url=f"https://t.me/{context.bot.username}?startgroup=true")],
-            [InlineKeyboardButton("🤖 Invite Bot", url=f"https://t.me/share/url?url=https://t.me/{context.bot.username}&text=Join%20this%20awesome%20bot!")]
+            [InlineKeyboardButton("🤖 Invite friends", url=f"https://t.me/share/url?url=https://t.me/{context.bot.username}&text=Join%20this%20awesome%20bot!")]
         ]
 
         # Add "Convert to MP3" button only for reels (videos)
