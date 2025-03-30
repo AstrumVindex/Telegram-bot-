@@ -1,38 +1,27 @@
 import os
 import logging
-import asyncio
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, BotCommandScopeChat
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, CallbackContext, filters
+    Application, CommandHandler, MessageHandler, CallbackContext, filters, CallbackQueryHandler
 )
-from telegram.ext import CallbackQueryHandler
-from handlers.config import BOT_TOKEN  # Secure Import
-from telegram import Update
-from telegram.ext import ContextTypes
-from handlers.downloads import download_instagram, download_youtube
-from handlers.rate_limiter import enforce_rate_limit  # Import rate limiter
+from handlers.config import BOT_TOKEN, ADMIN_ID
+from handlers.downloads import download_instagram
+from handlers.rate_limiter import enforce_rate_limit, blocked_users, unblock_user, set_limit, user_activity
 from handlers.start import start
 from handlers.messages import process_message
 from handlers.errors import error_handler
-from handlers.downloads import download_youtube, download_instagram, L
-from handlers.mp3button import convert_instagram_to_mp3  # MP3 Conversion
-# ✅ Logger Setup
+from handlers.mp3button import convert_instagram_to_mp3
+
+# Logger Setup
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# ✅ Initialize the Bot
-TOKEN = BOT_TOKEN
-
-# ✅ Admin User ID (Replace with your actual Telegram ID)
-ADMIN_ID = 1262827267  
-
-# ✅ File to Track Users
+# File to Track Users
 USER_TRACKING_FILE = "users.txt"
 
-# ✅ Function to Track Users
 def track_user(user_id: int):
     """Tracks users who interact with the bot."""
     try:
@@ -43,16 +32,18 @@ def track_user(user_id: int):
 
     if str(user_id) not in users:
         with open(USER_TRACKING_FILE, "a") as file:
-            file.write(str(user_id) + "\n")
+            file.write(f"{user_id}\n")
 
-# ✅ Admin Command to Send User List
+async def is_admin(user_id: int) -> bool:
+    """Check if user is admin."""
+    return user_id == ADMIN_ID
+
 async def send_users(update: Update, context: CallbackContext):
     """Sends the list of tracked users to the admin."""
-    user_id = update.effective_user.id
-    if user_id != ADMIN_ID:
+    if not await is_admin(update.effective_user.id):
         await update.message.reply_text("❌ You are not authorized to use this command.")
         return
-    
+
     try:
         with open(USER_TRACKING_FILE, "r") as file:
             users = file.read()
@@ -61,47 +52,125 @@ async def send_users(update: Update, context: CallbackContext):
     except FileNotFoundError:
         await update.message.reply_text("📂 No users have used the bot yet.")
 
-# ✅ MP3 Conversion Button Handler
 async def handle_button_click(update: Update, context: CallbackContext):
     """Handles button clicks for MP3 conversion."""
     query = update.callback_query
-    await query.answer()  # Acknowledge button click
+    await query.answer()
 
     if query.data.startswith("convert_mp3:"):
-        instagram_url = query.data.split(":", 1)[1]  # Extract Instagram URL
-
-        # ✅ Instead of editing, send a new message to prevent "no text to edit" error
+        instagram_url = query.data.split(":", 1)[1]
         status_message = await query.message.reply_text("🎵 Converting video to MP3... Please wait... ⏳")
 
-        # ✅ Call the Zamzar MP3 conversion function
-        mp3_link = await convert_instagram_to_mp3(instagram_url)
+        try:
+            mp3_file_path = await convert_instagram_to_mp3(instagram_url)
 
-        # ✅ Send the MP3 file or error message
-        if mp3_link.startswith("http"):
-            await status_message.delete()  # ✅ Delete status message if conversion is successful
-            await query.message.reply_audio(audio=mp3_link, caption="🎶 Here is your MP3 file!")
-        else:
-            await status_message.edit_text(mp3_link)  # ✅ Update message with error info
+            if mp3_file_path and os.path.exists(mp3_file_path):  # ✅ Double-check existence
+                await query.message.reply_audio(
+                    audio=open(mp3_file_path, "rb"), 
+                    caption="🎶 Here is your MP3 file!"
+                )
+                os.remove(mp3_file_path)  # ✅ Cleanup
+            else:
+                await status_message.edit_text(f"❌ Failed to convert to MP3. File not found at: {mp3_file_path}")
+
+        except Exception as e:
+            await status_message.edit_text(f"❌ Error during conversion: {str(e)}")
+            print(f"MP3 conversion error: {e}")
 
 
+async def rate_limited_process_message(update: Update, context: CallbackContext):
+    """Checks rate limit before processing any user message."""
+    is_allowed = await enforce_rate_limit(update, context)
+    if is_allowed:
+        await process_message(update, context)
+    else:
+        await update.message.reply_text("⚠️ You're sending messages too fast. Please wait.")
 
-# ✅ Main Bot Function
+async def send_help(update: Update, context: CallbackContext):
+    """Sends appropriate help message based on user role."""
+    if await is_admin(update.effective_user.id):
+        help_text = (
+            "🛠 *Admin Commands:*\n"
+            "/start - Start the bot\n"
+            "/help - Show this help message\n\n"
+            "🔒 *Admin Only Commands:*\n"
+            "/send_users - Get tracked users\n"
+            "/blocked_users - Show blocked users\n"
+            "/unblock <user_id> - Unblock a user\n"
+            "/user_activity <user_id> - Check user activity\n"
+            "/set_limit <messages> <time> - Change rate limits"
+        )
+    else:
+        help_text = (
+            "🛠 *Available Commands:*\n"
+            "/start - Start the bot\n"
+            "/help - Show this help message"
+        )
+    await update.message.reply_text(help_text, parse_mode="Markdown")
+
+async def set_bot_commands(application: Application):
+    """Sets bot commands in the Telegram menu with proper scoping."""
+    # Commands for all users
+    global_commands = [
+        BotCommand("start", "Start the bot"),
+        BotCommand("help", "Show help message")
+    ]
+    
+    # Admin-specific commands
+    admin_commands = global_commands + [
+        BotCommand("send_users", "Get tracked users (admin only)"),
+        BotCommand("blocked_users", "Show blocked users (admin only)"),
+        BotCommand("unblock", "Unblock a user (admin only)"),
+        BotCommand("user_activity", "Check user activity (admin only)"),
+        BotCommand("set_limit", "Change rate limits (admin only)")
+    ]
+    
+    # Set commands for all users
+    await application.bot.set_my_commands(global_commands)
+    
+    # Set admin commands specifically for admin
+    await application.bot.set_my_commands(
+        admin_commands,
+        scope=BotCommandScopeChat(ADMIN_ID)
+    )
+
+async def post_init(application: Application):
+    """Post-initialization tasks."""
+    await set_bot_commands(application)
+
 def main():
     """Starts the Telegram bot."""
-    application = Application.builder().token(TOKEN).build()
+    application = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
-    # ✅ Register Handlers
+    # Register Handlers
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("send_users", send_users))  # Admin-only command
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_message))
-    application.add_handler(CommandHandler("download_youtube", download_youtube))
-    application.add_handler(CommandHandler("youtube", lambda u, c: download_youtube(u, c, L)))
-    application.add_handler(CommandHandler("instagram", lambda u, c: download_instagram(u, c, L)))
-    application.add_handler(CallbackQueryHandler(handle_button_click))  # MP3 Button Handler
-  
-    # ✅ Start the bot
+    application.add_handler(CommandHandler("help", send_help))
+    
+    # Admin commands with restriction
+    admin_commands = [
+        ("send_users", send_users),
+        ("blocked_users", blocked_users),
+        ("unblock", unblock_user),
+        ("user_activity", user_activity),
+        ("set_limit", set_limit)
+    ]
+    
+    for cmd, handler in admin_commands:
+        application.add_handler(
+            CommandHandler(
+                cmd,
+                handler,
+                filters=filters.User(ADMIN_ID)
+            )
+        )
+
+    # Other handlers
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, rate_limited_process_message))
+    application.add_handler(CallbackQueryHandler(handle_button_click))
+    application.add_error_handler(error_handler)
+
+    # Start the bot
     application.run_polling(drop_pending_updates=True)
 
-# ✅ Start the bot
 if __name__ == "__main__":
     main()
