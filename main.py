@@ -10,7 +10,11 @@ from handlers.rate_limiter import enforce_rate_limit, blocked_users, unblock_use
 from handlers.start import start
 from handlers.messages import process_message
 from handlers.errors import error_handler
+from telegram.helpers import escape_markdown  # Import this at the top
+from telegram.helpers import escape_markdown
+from telegram.constants import ParseMode
 from handlers.mp3button import convert_instagram_to_mp3
+from database import user_db  # Add this import
 
 # Logger Setup
 logging.basicConfig(
@@ -19,20 +23,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# File to Track Users
-USER_TRACKING_FILE = "users.txt"
-
-def track_user(user_id: int):
-    """Tracks users who interact with the bot."""
-    try:
-        with open(USER_TRACKING_FILE, "r") as file:
-            users = file.read().splitlines()
-    except FileNotFoundError:
-        users = []
-
-    if str(user_id) not in users:
-        with open(USER_TRACKING_FILE, "a") as file:
-            file.write(f"{user_id}\n")
 
 async def is_admin(user_id: int) -> bool:
     """Check if user is admin."""
@@ -44,38 +34,61 @@ async def send_users(update: Update, context: CallbackContext):
         await update.message.reply_text("❌ You are not authorized to use this command.")
         return
 
-    try:
-        with open(USER_TRACKING_FILE, "r") as file:
-            users = file.read()
-        message = f"📜 User List:\n{users}" if users.strip() else "📂 No users have used the bot yet."
-        await update.message.reply_text(message)
-    except FileNotFoundError:
-        await update.message.reply_text("📂 No users have used the bot yet.")
+    total_users, active_users = user_db.get_user_stats()
+    message = (
+        f"📊 Bot Statistics:\n"
+        f"• Total users: {total_users}\n"
+        f"• Active users (last 30 days): {active_users}"
+    )
+    await update.message.reply_text(message)
+
+
+from telegram.helpers import escape_markdown
+from telegram.constants import ParseMode
 
 async def handle_button_click(update: Update, context: CallbackContext):
-    """Handles button clicks for MP3 conversion."""
+    """Handles button clicks with proper value unpacking"""
     query = update.callback_query
     await query.answer()
 
     if query.data.startswith("convert_mp3:"):
         instagram_url = query.data.split(":", 1)[1]
-        status_message = await query.message.reply_text("🎵 Converting video to MP3... Please wait... ⏳")
+        
+        # Keep only "Add to Group" button
+        new_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton(
+                "➕ Add to Group", 
+                url=f"https://t.me/{context.bot.username}?startgroup=true"
+            )]
+        ])
+        await query.message.edit_reply_markup(reply_markup=new_markup)
+        
+        processing_msg = await query.message.reply_text("⏳ Converting Please Wait...")
 
         try:
-            mp3_file_path = await convert_instagram_to_mp3(instagram_url)
-
-            if mp3_file_path and os.path.exists(mp3_file_path):  # ✅ Double-check existence
-                await query.message.reply_audio(
-                    audio=open(mp3_file_path, "rb"), 
-                    caption="🎶 Here is your MP3 file!"
-                )
-                os.remove(mp3_file_path)  # ✅ Cleanup
+            # Get the conversion result (expecting 2 values now)
+            result = await convert_instagram_to_mp3(instagram_url)
+            
+            if result and len(result) >= 2:  # Check if we got at least 2 values
+                mp3_file_path = result[0]  # First value is always file path
+                
+                if mp3_file_path and os.path.exists(mp3_file_path):
+                    with open(mp3_file_path, "rb") as mp3_file:
+                        await query.message.reply_audio(
+                            audio=mp3_file,
+                            caption="🎶 Here is your MP3",
+                            parse_mode=ParseMode.MARKDOWN
+                        )
+                    
+                    await processing_msg.delete()
+                    os.remove(mp3_file_path)
+                else:
+                    await processing_msg.edit_text("❌ Conversion failed")
             else:
-                await status_message.edit_text(f"❌ Failed to convert to MP3. File not found at: {mp3_file_path}")
+                await processing_msg.edit_text("❌ Conversion failed")
 
         except Exception as e:
-            await status_message.edit_text(f"❌ Error during conversion: {str(e)}")
-            print(f"MP3 conversion error: {e}")
+            await processing_msg.edit_text(f"❌ Error: {str(e)}")
 
 
 async def rate_limited_process_message(update: Update, context: CallbackContext):
