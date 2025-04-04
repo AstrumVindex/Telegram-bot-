@@ -1,5 +1,7 @@
 import os
 import logging
+import threading
+from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, BotCommandScopeChat
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackContext, filters, CallbackQueryHandler
@@ -10,11 +12,10 @@ from handlers.rate_limiter import enforce_rate_limit, blocked_users, unblock_use
 from handlers.start import start
 from handlers.messages import process_message
 from handlers.errors import error_handler
-from telegram.helpers import escape_markdown  # Import this at the top
 from telegram.helpers import escape_markdown
 from telegram.constants import ParseMode
 from handlers.mp3button import convert_instagram_to_mp3
-from database import user_db  # Add this import
+from database import user_db  
 
 # Logger Setup
 logging.basicConfig(
@@ -23,6 +24,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ✅ Flask Web Server to Keep Bot Alive
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+def run_web_server():
+    """Runs Flask web server on a separate thread."""
+    app.run(host="0.0.0.0", port=8080)
 
 async def is_admin(user_id: int) -> bool:
     """Check if user is admin."""
@@ -42,10 +53,6 @@ async def send_users(update: Update, context: CallbackContext):
     )
     await update.message.reply_text(message)
 
-
-from telegram.helpers import escape_markdown
-from telegram.constants import ParseMode
-
 async def handle_button_click(update: Update, context: CallbackContext):
     """Handles button clicks with proper value unpacking"""
     query = update.callback_query
@@ -54,7 +61,6 @@ async def handle_button_click(update: Update, context: CallbackContext):
     if query.data.startswith("convert_mp3:"):
         instagram_url = query.data.split(":", 1)[1]
         
-        # Keep only "Add to Group" button
         new_markup = InlineKeyboardMarkup([
             [InlineKeyboardButton(
                 "➕ Add to Group", 
@@ -66,11 +72,10 @@ async def handle_button_click(update: Update, context: CallbackContext):
         processing_msg = await query.message.reply_text("⏳ Converting Please Wait...")
 
         try:
-            # Get the conversion result (expecting 2 values now)
             result = await convert_instagram_to_mp3(instagram_url)
             
-            if result and len(result) >= 2:  # Check if we got at least 2 values
-                mp3_file_path = result[0]  # First value is always file path
+            if result and len(result) >= 2:
+                mp3_file_path = result[0]  
                 
                 if mp3_file_path and os.path.exists(mp3_file_path):
                     with open(mp3_file_path, "rb") as mp3_file:
@@ -89,7 +94,6 @@ async def handle_button_click(update: Update, context: CallbackContext):
 
         except Exception as e:
             await processing_msg.edit_text(f"❌ Error: {str(e)}")
-
 
 async def rate_limited_process_message(update: Update, context: CallbackContext):
     """Checks rate limit before processing any user message."""
@@ -117,19 +121,17 @@ async def send_help(update: Update, context: CallbackContext):
         help_text = (
             "🛠 *Available Commands:*\n"
             "/start - Start the bot\n"
-            "/help - Show this help message"
+            "/help - Show help message"
         )
     await update.message.reply_text(help_text, parse_mode="Markdown")
 
 async def set_bot_commands(application: Application):
     """Sets bot commands in the Telegram menu with proper scoping."""
-    # Commands for all users
     global_commands = [
         BotCommand("start", "Start the bot"),
         BotCommand("help", "Show help message")
     ]
     
-    # Admin-specific commands
     admin_commands = global_commands + [
         BotCommand("send_users", "Get tracked users (admin only)"),
         BotCommand("blocked_users", "Show blocked users (admin only)"),
@@ -138,10 +140,8 @@ async def set_bot_commands(application: Application):
         BotCommand("set_limit", "Change rate limits (admin only)")
     ]
     
-    # Set commands for all users
     await application.bot.set_my_commands(global_commands)
     
-    # Set admin commands specifically for admin
     await application.bot.set_my_commands(
         admin_commands,
         scope=BotCommandScopeChat(ADMIN_ID)
@@ -152,14 +152,15 @@ async def post_init(application: Application):
     await set_bot_commands(application)
 
 def main():
-    """Starts the Telegram bot."""
+    """Starts the Telegram bot and web server."""
+    # ✅ Start Flask web server in a separate thread
+    threading.Thread(target=run_web_server, daemon=True).start()
+
     application = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
-    # Register Handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", send_help))
     
-    # Admin commands with restriction
     admin_commands = [
         ("send_users", send_users),
         ("blocked_users", blocked_users),
@@ -177,12 +178,10 @@ def main():
             )
         )
 
-    # Other handlers
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, rate_limited_process_message))
     application.add_handler(CallbackQueryHandler(handle_button_click))
     application.add_error_handler(error_handler)
 
-    # Start the bot
     application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":

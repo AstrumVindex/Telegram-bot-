@@ -53,29 +53,27 @@ async def download_instagram(update: Update, context: CallbackContext):
         media_path = f"downloads/{post.date_utc.strftime('%Y-%m-%d_%H-%M-%S_UTC')}"
 
         # ✅ Generate Message with Buttons
+        # ✅ Generate Message with Title & Buttons
+        post_caption = post.caption if post.caption else "Untitled Post"  # Extract title (caption)
         caption = (
-            "🎬 *Instagram Media Downloaded!*\n\n"
-            "📅 *Posted:* `{time}`\n"
-            "👤 *Author:* [{author}](https://www.instagram.com/{author})\n"
-            "🔗 *Original Post:* [Click Here]({post_url})\n\n"
-            "_Enjoy your media! Powered by [@{bot_username}](https://t.me/{bot_username})_"
-        ).format(
-            time=post.date_utc.strftime('%Y-%m-%d %H:%M:%S UTC'),
-            author=post.owner_username,
-            post_url=instagram_url,
-            bot_username=context.bot.username
-        )
+                   f"📢 *{post_caption}*\n\n"  # ✅ Title (instead of 'Instagram Media Downloaded!')
+                   f"📅 *Posted:* `{post.date_utc.strftime('%Y-%m-%d %H:%M:%S UTC')}`\n"
+                   f"👤 *Author:* [{post.owner_username}](https://www.instagram.com/{post.owner_username})\n"
+                   f"🔗 *Original Post:* [Click Here]({instagram_url})\n\n"
+                   f"_@{context.bot.username}_"  # ✅ Removed the hyperlink, just plain username
+                  )
 
-        # ✅ Generate Buttons Dynamically
+          # ✅ Generate Buttons Dynamically
         keyboard = [
-            [InlineKeyboardButton("➕ Add to Group", url=f"https://t.me/{context.bot.username}?startgroup=true")],
-        ]
+           [InlineKeyboardButton("➕ Add to Group", url=f"https://t.me/{context.bot.username}?startgroup=true")],
+         ]
 
         # Add "Convert to MP3" button only for reels (videos)
         if "reel" in instagram_url and post.is_video:
-            keyboard.insert(0, [InlineKeyboardButton("🎵 Convert to MP3", callback_data=f"convert_mp3:{shortcode}")])
+           keyboard.insert(0, [InlineKeyboardButton("🎵 Convert to MP3", callback_data=f"convert_mp3:{shortcode}")])
 
         reply_markup = InlineKeyboardMarkup(keyboard)
+
 
         # ✅ Check if media exists and send it
         if post.is_video:
