@@ -10,12 +10,14 @@ from handlers.config import BOT_TOKEN, ADMIN_ID
 from handlers.downloads import download_instagram
 from handlers.rate_limiter import enforce_rate_limit, blocked_users, unblock_user, set_limit, user_activity
 from handlers.start import start
-from handlers.messages import process_message
 from handlers.errors import error_handler
 from telegram.helpers import escape_markdown
 from telegram.constants import ParseMode
 from handlers.mp3button import convert_instagram_to_mp3
-from database import user_db  
+from database import user_db
+from handlers.messages import handle_message
+
+
 
 # Logger Setup
 logging.basicConfig(
@@ -23,6 +25,7 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
 
 # ✅ Flask Web Server to Keep Bot Alive
 app = Flask(__name__)
@@ -95,13 +98,7 @@ async def handle_button_click(update: Update, context: CallbackContext):
         except Exception as e:
             await processing_msg.edit_text(f"❌ Error: {str(e)}")
 
-async def rate_limited_process_message(update: Update, context: CallbackContext):
-    """Checks rate limit before processing any user message."""
-    is_allowed = await enforce_rate_limit(update, context)
-    if is_allowed:
-        await process_message(update, context)
-    else:
-        await update.message.reply_text("⚠️ You're sending messages too fast. Please wait.")
+
 
 async def send_help(update: Update, context: CallbackContext):
     """Sends appropriate help message based on user role."""
@@ -178,7 +175,7 @@ def main():
             )
         )
 
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, rate_limited_process_message))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(handle_button_click))
     application.add_error_handler(error_handler)
 

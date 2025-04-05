@@ -54,14 +54,18 @@ async def download_instagram(update: Update, context: CallbackContext):
 
         # ✅ Generate Message with Buttons
         # ✅ Generate Message with Title & Buttons
-        post_caption = post.caption if post.caption else "Untitled Post"  # Extract title (caption)
+        # ✅ Extract only the first line of the caption as title
+        post_caption = post.caption.split('\n')[0] if post.caption else "Untitled Post"
+
+        # ✅ Compose caption
         caption = (
-                   f"📢 *{post_caption}*\n\n"  # ✅ Title (instead of 'Instagram Media Downloaded!')
-                   f"📅 *Posted:* `{post.date_utc.strftime('%Y-%m-%d %H:%M:%S UTC')}`\n"
-                   f"👤 *Author:* [{post.owner_username}](https://www.instagram.com/{post.owner_username})\n"
-                   f"🔗 *Original Post:* [Click Here]({instagram_url})\n\n"
-                   f"_@{context.bot.username}_"  # ✅ Removed the hyperlink, just plain username
-                  )
+             f"📢 *{post_caption}*\n\n"
+             f"📅 *Posted:* `{post.date_utc.strftime('%Y-%m-%d %H:%M:%S UTC')}`\n"
+             f"👤 *Author:* [{post.owner_username}](https://www.instagram.com/{post.owner_username})\n"
+             f"🔗 *Original Post:* [Click Here]({instagram_url})\n\n"
+             f"_Via @{context.bot.username}_"
+        )
+
 
           # ✅ Generate Buttons Dynamically
         keyboard = [

@@ -21,3 +21,4 @@ logs/
 # Ignore downloaded media (if not needed in GitHub)
 
 # Ignore Config file because it contains API
+handlers/accounts.py
