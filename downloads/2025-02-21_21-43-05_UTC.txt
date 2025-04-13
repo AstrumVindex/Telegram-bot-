@@ -1,1 +1,0 @@
-Importing entire cities into Blender is quick with the Blosm plugin—just look it up. The main issue? Each tile gets a different material, making custom shaders tricky. In my point cloud course, I cover how to merge all textures into one. Comment “lessons” if you want the details!
