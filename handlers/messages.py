@@ -12,22 +12,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles user messages: processes Instagram/YouTube links and ignores random text."""
     message_text = update.effective_message.text.strip()
 
-    # ✅ Allow commands to be handled elsewhere
+    # ✅ Skip command messages (handled separately)
     if message_text.startswith("/"):
         return
 
-    # ✅ Enforce rate limit
+    # ✅ Apply rate limiting
     if not await enforce_rate_limit(update, context):
         return
 
-    # ✅ Match Instagram or YouTube links
+    # ✅ Match supported URLs
     match = URL_PATTERN.search(message_text)
     if match:
-        if "instagram.com" in message_text:
+        url = match.group(0)
+
+        if "instagram.com" in url:
             await download_instagram(update, context)
+        elif "youtube.com" in url or "youtu.be" in url:
+            await update.message.reply_text("📌 YouTube support is coming soon! Stay tuned.")
         else:
-            await update.message.reply_text("⚠️ Only Instagram links are supported right now.")
+            await update.message.reply_text("⚠️ Unsupported link format.")
+
         return
 
-    # ❌ Ignore all other text (no reply)
+    # ❌ Ignore unrelated messages (no reply)
     return

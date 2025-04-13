@@ -14,9 +14,11 @@ L = Instaloader()
 L.context.timeout = 60  # Increase timeout to 60 seconds
 os.makedirs("downloads", exist_ok=True)  # Ensure downloads folder exists
 
-# ✅ Instagram Download Function
+# 🚀 Add at the top
+from telegram import InputMediaPhoto, InputMediaVideo
+
 async def download_instagram(update: Update, context: CallbackContext):
-    """Downloads Instagram media (Reel, Post, Story)."""
+    """Downloads Instagram media (Reel, Post, Story, or Carousel)."""
     message = update.effective_message
     instagram_url = message.text.strip()
 
@@ -29,7 +31,6 @@ async def download_instagram(update: Update, context: CallbackContext):
 
     shortcode = match.group(1).split('/')[-1]
 
-    # ✅ Detect Instagram link type
     if "reel" in instagram_url:
         media_type = "reel"
     elif "p" in instagram_url:
@@ -46,60 +47,106 @@ async def download_instagram(update: Update, context: CallbackContext):
     try:
         post = Post.from_shortcode(L.context, shortcode)
 
-        # ✅ Download Media
         await asyncio.to_thread(L.download_post, post, target="downloads")
 
-        # ✅ Ensure correct media path
         media_path = f"downloads/{post.date_utc.strftime('%Y-%m-%d_%H-%M-%S_UTC')}"
 
-        # ✅ Generate Message with Buttons
-        # ✅ Generate Message with Title & Buttons
-        # ✅ Extract only the first line of the caption as title
         post_caption = post.caption.split('\n')[0] if post.caption else "Untitled Post"
-
-        # ✅ Compose caption
         caption = (
-             f"📢 *{post_caption}*\n\n"
-             f"📅 *Posted:* `{post.date_utc.strftime('%Y-%m-%d %H:%M:%S UTC')}`\n"
-             f"👤 *Author:* [{post.owner_username}](https://www.instagram.com/{post.owner_username})\n"
-             f"🔗 *Original Post:* [Click Here]({instagram_url})\n\n"
-             f"_Via @{context.bot.username}_"
+            f"📢 *{post_caption}*\n\n"
+            f"📅 *Posted:* `{post.date_utc.strftime('%Y-%m-%d %H:%M:%S UTC')}`\n"
+            f"👤 *Author:* [{post.owner_username}](https://www.instagram.com/{post.owner_username})\n"
+            f"🔗 *Original Post:* [Click Here]({instagram_url})\n\n"
+            f"_Via @{context.bot.username}_"
         )
 
-
-          # ✅ Generate Buttons Dynamically
-        keyboard = [
-           [InlineKeyboardButton("➕ Add to Group", url=f"https://t.me/{context.bot.username}?startgroup=true")],
-         ]
-
-        # Add "Convert to MP3" button only for reels (videos)
+        # Remove "Add to Group" button if it's a carousel
+        keyboard = []
         if "reel" in instagram_url and post.is_video:
-           keyboard.insert(0, [InlineKeyboardButton("🎵 Convert to MP3", callback_data=f"convert_mp3:{shortcode}")])
+            keyboard.append([InlineKeyboardButton("🎵 Convert to MP3", callback_data=f"convert_mp3:{shortcode}")])
 
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
 
+        # 🧠 Detect carousel or single
+        is_carousel = post.typename == 'GraphSidecar'
+        photo_group = []
+        files_to_cleanup = []  # Track files for cleanup
 
-        # ✅ Check if media exists and send it
-        if post.is_video:
-            video_file = f"{media_path}.mp4"
-            if os.path.exists(video_file):
-                with open(video_file, "rb") as file:
-                    await message.reply_video(video=file, caption=caption, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
-                os.remove(video_file)  # Delete after sending
-                print(f"✅ Deleted video file: {video_file}")
+        if is_carousel:
+            index = 1
+            while True:
+                image_file = f"{media_path}_{index}.jpg"
+                video_file = f"{media_path}_{index}.mp4"
+
+                if os.path.exists(image_file):
+                    photo_group.append(InputMediaPhoto(media=open(image_file, "rb")))
+                    files_to_cleanup.append(image_file)
+                    index += 1
+                elif os.path.exists(video_file):
+                    photo_group.append(InputMediaVideo(media=open(video_file, "rb")))
+                    files_to_cleanup.append(video_file)
+                    index += 1
+                else:
+                    break  # No more files
+
+            if photo_group:
+                # Add caption to the first media
+                photo_group[0] = InputMediaPhoto(
+                    media=photo_group[0].media,
+                    caption=caption,
+                    parse_mode=ParseMode.MARKDOWN
+                )
+
+                await message.reply_media_group(media=photo_group)
+                await waiting_message.edit_text(f"✅ Here is your {media_type}!")
+
+                # Cleanup
+                for file_path in files_to_cleanup:
+                    try:
+                        os.remove(file_path)
+                        print(f"✅ Deleted: {file_path}")
+                    except Exception as e:
+                        print(f"❌ Error deleting {file_path}: {e}")
+
+                # Close all file handles
+                for media in photo_group:
+                    if hasattr(media.media, 'close'):
+                        media.media.close()
+
             else:
-                await message.reply_text("❌ Video file not found!")
+                await waiting_message.edit_text("❌ Couldn't find any media in this post!")
+
         else:
-            photo_file = f"{media_path}.jpg"
-            if os.path.exists(photo_file):
-                with open(photo_file, "rb") as file:
-                    await message.reply_photo(photo=file, caption=caption, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
-                os.remove(photo_file)  # Delete after sending
-                print(f"✅ Deleted photo file: {photo_file}")
+            if post.is_video:
+                video_file = f"{media_path}.mp4"
+                if os.path.exists(video_file):
+                    try:
+                        with open(video_file, "rb") as file:
+                            await message.reply_video(video=file, caption=caption, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+                        await waiting_message.edit_text(f"✅ Here is your {media_type}!")
+                    finally:
+                        try:
+                            os.remove(video_file)
+                            print(f"✅ Deleted video file: {video_file}")
+                        except Exception as e:
+                            print(f"❌ Error deleting video file: {e}")
+                else:
+                    await waiting_message.edit_text("❌ Video file not found!")
             else:
-                await message.reply_text("❌ Photo file not found!")
-
-        await waiting_message.edit_text(f"✅ Here is your {media_type}!")
+                photo_file = f"{media_path}.jpg"
+                if os.path.exists(photo_file):
+                    try:
+                        with open(photo_file, "rb") as file:
+                            await message.reply_photo(photo=file, caption=caption, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+                        await waiting_message.edit_text(f"✅ Here is your {media_type}!")
+                    finally:
+                        try:
+                            os.remove(photo_file)
+                            print(f"✅ Deleted photo file: {photo_file}")
+                        except Exception as e:
+                            print(f"❌ Error deleting photo file: {e}")
+                else:
+                    await waiting_message.edit_text("❌ Photo file not found!")
 
     except Exception as e:
         await waiting_message.edit_text(f"❌ Instagram error: {str(e)}")
